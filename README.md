@@ -22,7 +22,7 @@ lets Python's own UTC-normalized subtraction do the hard part.
 ```python
 from datetime import datetime, timedelta, timezone
 
-from timecard import TimeEntry, worked_minutes, round_to_increment, split_overtime
+from timecard import TimeEntry, worked_minutes, round_to_increment, split_overtime, split_weekly_overtime
 
 est = timezone(timedelta(hours=-5))
 
@@ -48,6 +48,15 @@ round_to_increment(97, increment=15)  # 90
 
 # Split a day's worked minutes into regular and overtime.
 split_overtime(worked=500, daily_threshold_minutes=480)  # (480, 20)
+
+# Split a week's worth of daily totals, honoring both the daily threshold
+# and a weekly one (whichever produces more overtime wins, without
+# double-counting the same minute under both rules).
+split_weekly_overtime(
+    daily_worked=[480, 480, 480, 480, 480, 480],
+    daily_threshold_minutes=480,
+    weekly_threshold_minutes=40 * 60,
+)  # [(480, 0), (480, 0), (480, 0), (480, 0), (480, 0), (0, 480)]
 ```
 
 Clock-in and clock-out must be timezone-aware `datetime` objects. A
@@ -56,10 +65,10 @@ guessing what timezone you meant.
 
 ## Status
 
-Early. The core duration math, rounding, and a daily overtime split
-are in place. See `tests/test_core.py` for the table of edge cases
-this is meant to handle correctly, including shifts that cross a
-spring-forward and a fall-back DST transition.
+Early. The core duration math, rounding, and daily/weekly overtime
+splits are in place. See `tests/test_core.py` for the table of edge
+cases this is meant to handle correctly, including shifts that cross
+a spring-forward and a fall-back DST transition.
 
 ## Install
 

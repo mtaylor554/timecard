@@ -80,3 +80,42 @@ def split_overtime(worked: int, daily_threshold_minutes: int = 8 * 60) -> tuple[
     if worked <= daily_threshold_minutes:
         return worked, 0
     return daily_threshold_minutes, worked - daily_threshold_minutes
+
+
+def split_weekly_overtime(
+    daily_worked: list[int],
+    daily_threshold_minutes: int = 8 * 60,
+    weekly_threshold_minutes: int = 40 * 60,
+) -> list[tuple[int, int]]:
+    """Split each day's worked minutes into (regular, overtime), applying both a
+    daily and a weekly threshold the way most US state rules do: overtime is
+    whichever is bigger, hours past the daily threshold or hours past the
+    weekly threshold, without double-counting the same minute under both.
+
+    Order matters - the list should be in the same order the days happened
+    in, since the weekly threshold is applied against a running total.
+    """
+    if daily_threshold_minutes <= 0:
+        raise ValueError("daily_threshold_minutes must be positive")
+    if weekly_threshold_minutes <= 0:
+        raise ValueError("weekly_threshold_minutes must be positive")
+
+    results = []
+    regular_total = 0
+    for worked in daily_worked:
+        day_regular, day_overtime = split_overtime(worked, daily_threshold_minutes)
+
+        remaining_weekly_capacity = weekly_threshold_minutes - regular_total
+        if remaining_weekly_capacity <= 0:
+            week_overtime = day_regular
+            day_regular = 0
+        elif day_regular > remaining_weekly_capacity:
+            week_overtime = day_regular - remaining_weekly_capacity
+            day_regular = remaining_weekly_capacity
+        else:
+            week_overtime = 0
+
+        regular_total += day_regular
+        results.append((day_regular, day_overtime + week_overtime))
+
+    return results

@@ -7,6 +7,7 @@ from timecard import (
     TimeEntry,
     round_to_increment,
     split_overtime,
+    split_weekly_overtime,
     worked_minutes,
 )
 
@@ -122,6 +123,64 @@ class SplitOvertimeTests(unittest.TestCase):
         for description, worked, threshold, expected in OVERTIME_CASES:
             with self.subTest(description):
                 self.assertEqual(split_overtime(worked, threshold), expected)
+
+
+# Each case is (description, daily_worked, daily_threshold, weekly_threshold, expected per-day list).
+WEEKLY_OVERTIME_CASES = [
+    (
+        "under both thresholds every day",
+        [420, 420, 420, 420, 420],
+        480,
+        2400,
+        [(420, 0), (420, 0), (420, 0), (420, 0), (420, 0)],
+    ),
+    (
+        "daily overtime only, never touches the weekly threshold",
+        [500, 500, 500, 500, 500],
+        480,
+        2400,
+        [(480, 20), (480, 20), (480, 20), (480, 20), (480, 20)],
+    ),
+    (
+        "six full 8-hour days pushes the sixth entirely into weekly overtime",
+        [480, 480, 480, 480, 480, 480],
+        480,
+        2400,
+        [(480, 0), (480, 0), (480, 0), (480, 0), (480, 0), (0, 480)],
+    ),
+    (
+        "a day that crosses the weekly threshold mid-day splits regular and overtime",
+        [480, 480, 480, 480, 300],
+        480,
+        2100,
+        [(480, 0), (480, 0), (480, 0), (480, 0), (180, 120)],
+    ),
+    (
+        "empty week",
+        [],
+        480,
+        2400,
+        [],
+    ),
+]
+
+
+class SplitWeeklyOvertimeTests(unittest.TestCase):
+    def test_cases(self):
+        for description, daily_worked, daily_threshold, weekly_threshold, expected in WEEKLY_OVERTIME_CASES:
+            with self.subTest(description):
+                self.assertEqual(
+                    split_weekly_overtime(daily_worked, daily_threshold, weekly_threshold),
+                    expected,
+                )
+
+    def test_rejects_non_positive_daily_threshold(self):
+        with self.assertRaises(ValueError):
+            split_weekly_overtime([480], daily_threshold_minutes=0)
+
+    def test_rejects_non_positive_weekly_threshold(self):
+        with self.assertRaises(ValueError):
+            split_weekly_overtime([480], weekly_threshold_minutes=0)
 
 
 if __name__ == "__main__":
