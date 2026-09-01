@@ -5,6 +5,7 @@ from timecard import (
     InvalidShiftError,
     OpenShiftError,
     TimeEntry,
+    Timesheet,
     round_to_increment,
     split_overtime,
     split_weekly_overtime,
@@ -181,6 +182,63 @@ class SplitWeeklyOvertimeTests(unittest.TestCase):
     def test_rejects_non_positive_weekly_threshold(self):
         with self.assertRaises(ValueError):
             split_weekly_overtime([480], weekly_threshold_minutes=0)
+
+
+class TimesheetTests(unittest.TestCase):
+    def test_daily_worked_minutes_groups_and_sorts_by_start_day(self):
+        sheet = Timesheet()
+        # Added out of order on purpose, to check daily_worked_minutes sorts.
+        sheet.add(TimeEntry(clock_in=dt(EST, 2026, 1, 6, 9, 0), clock_out=dt(EST, 2026, 1, 6, 13, 0)))
+        sheet.add(TimeEntry(clock_in=dt(EST, 2026, 1, 5, 9, 0), clock_out=dt(EST, 2026, 1, 5, 12, 0)))
+        sheet.add(TimeEntry(clock_in=dt(EST, 2026, 1, 5, 13, 0), clock_out=dt(EST, 2026, 1, 5, 17, 0)))
+
+        self.assertEqual(
+            sheet.daily_worked_minutes(),
+            [(dt(EST, 2026, 1, 5, 0, 0).date(), 420), (dt(EST, 2026, 1, 6, 0, 0).date(), 240)],
+        )
+
+    def test_overnight_shift_is_attributed_to_the_start_day(self):
+        sheet = Timesheet()
+        sheet.add(TimeEntry(clock_in=dt(EST, 2026, 1, 5, 22, 0), clock_out=dt(EST, 2026, 1, 6, 6, 0)))
+
+        self.assertEqual(sheet.daily_worked_minutes(), [(dt(EST, 2026, 1, 5, 0, 0).date(), 480)])
+
+    def test_total_worked_minutes(self):
+        sheet = Timesheet(
+            entries=[
+                TimeEntry(clock_in=dt(EST, 2026, 1, 5, 9, 0), clock_out=dt(EST, 2026, 1, 5, 13, 0)),
+                TimeEntry(clock_in=dt(EST, 2026, 1, 6, 9, 0), clock_out=dt(EST, 2026, 1, 6, 13, 0)),
+            ]
+        )
+        self.assertEqual(sheet.total_worked_minutes(), 480)
+
+    def test_total_worked_minutes_on_empty_sheet(self):
+        self.assertEqual(Timesheet().total_worked_minutes(), 0)
+
+    def test_open_shift_propagates_from_total_worked_minutes(self):
+        sheet = Timesheet(entries=[TimeEntry(clock_in=dt(EST, 2026, 1, 5, 9, 0), clock_out=None)])
+        with self.assertRaises(OpenShiftError):
+            sheet.total_worked_minutes()
+
+    def test_overtime_applies_daily_and_weekly_thresholds_in_day_order(self):
+        sheet = Timesheet()
+        for day in (5, 6, 7, 8, 9, 10):
+            sheet.add(TimeEntry(clock_in=dt(EST, 2026, 1, day, 9, 0), clock_out=dt(EST, 2026, 1, day, 17, 0)))
+
+        self.assertEqual(
+            sheet.overtime(daily_threshold_minutes=480, weekly_threshold_minutes=2400),
+            [
+                (dt(EST, 2026, 1, 5, 0, 0).date(), 480, 0),
+                (dt(EST, 2026, 1, 6, 0, 0).date(), 480, 0),
+                (dt(EST, 2026, 1, 7, 0, 0).date(), 480, 0),
+                (dt(EST, 2026, 1, 8, 0, 0).date(), 480, 0),
+                (dt(EST, 2026, 1, 9, 0, 0).date(), 480, 0),
+                (dt(EST, 2026, 1, 10, 0, 0).date(), 0, 480),
+            ],
+        )
+
+    def test_overtime_on_empty_sheet(self):
+        self.assertEqual(Timesheet().overtime(), [])
 
 
 if __name__ == "__main__":

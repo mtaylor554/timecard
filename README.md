@@ -22,7 +22,7 @@ lets Python's own UTC-normalized subtraction do the hard part.
 ```python
 from datetime import datetime, timedelta, timezone
 
-from timecard import TimeEntry, worked_minutes, round_to_increment, split_overtime, split_weekly_overtime
+from timecard import TimeEntry, Timesheet, worked_minutes, round_to_increment, split_overtime, split_weekly_overtime
 
 est = timezone(timedelta(hours=-5))
 
@@ -57,6 +57,17 @@ split_weekly_overtime(
     daily_threshold_minutes=480,
     weekly_threshold_minutes=40 * 60,
 )  # [(480, 0), (480, 0), (480, 0), (480, 0), (480, 0), (0, 480)]
+
+# Timesheet groups a period's punches by the calendar day they started
+# on and applies the daily/weekly overtime split for you.
+sheet = Timesheet()
+sheet.add(TimeEntry(clock_in=datetime(2026, 1, 5, 9, 0, tzinfo=est), clock_out=datetime(2026, 1, 5, 17, 0, tzinfo=est)))
+sheet.add(TimeEntry(clock_in=datetime(2026, 1, 6, 9, 0, tzinfo=est), clock_out=datetime(2026, 1, 6, 17, 0, tzinfo=est)))
+
+sheet.daily_worked_minutes()  # [(date(2026, 1, 5), 480), (date(2026, 1, 6), 480)]
+sheet.total_worked_minutes()  # 960
+sheet.overtime(daily_threshold_minutes=480, weekly_threshold_minutes=2400)
+# [(date(2026, 1, 5), 480, 0), (date(2026, 1, 6), 480, 0)]
 ```
 
 Clock-in and clock-out must be timezone-aware `datetime` objects. A
@@ -65,10 +76,11 @@ guessing what timezone you meant.
 
 ## Status
 
-Early. The core duration math, rounding, and daily/weekly overtime
-splits are in place. See `tests/test_core.py` for the table of edge
-cases this is meant to handle correctly, including shifts that cross
-a spring-forward and a fall-back DST transition.
+Early. The core duration math, rounding, daily/weekly overtime
+splits, and the `Timesheet` container that groups punches into days
+are in place. See `tests/test_core.py` for the table of edge cases
+this is meant to handle correctly, including shifts that cross a
+spring-forward and a fall-back DST transition.
 
 ## Install
 

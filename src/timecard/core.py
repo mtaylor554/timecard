@@ -7,8 +7,8 @@ module tries to get those right instead of assuming every day is a tidy
 24 hours.
 """
 
-from dataclasses import dataclass
-from datetime import datetime, timedelta
+from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta
 
 
 class OpenShiftError(ValueError):
@@ -56,6 +56,53 @@ def worked_minutes(entry: TimeEntry) -> int:
         )
 
     return round(worked)
+
+
+@dataclass
+class Timesheet:
+    """A worker's punches for a pay period, in the order they happened.
+
+    This is a thin wrapper over a list of TimeEntry rows. Its job is
+    grouping punches by the calendar day they started on, since that's
+    the unit daily overtime rules and payroll reports operate on - an
+    overnight shift is attributed entirely to the day it started.
+    """
+
+    entries: list[TimeEntry] = field(default_factory=list)
+
+    def add(self, entry: TimeEntry) -> None:
+        self.entries.append(entry)
+
+    def daily_worked_minutes(self) -> list[tuple[date, int]]:
+        """Worked minutes per calendar day, sorted chronologically.
+
+        Sorted order matters to callers like overtime(), which feeds
+        this into split_weekly_overtime and needs the days in the
+        order they happened.
+        """
+        totals: dict[date, int] = {}
+        for entry in self.entries:
+            day = entry.clock_in.date()
+            totals[day] = totals.get(day, 0) + worked_minutes(entry)
+        return sorted(totals.items())
+
+    def total_worked_minutes(self) -> int:
+        return sum(worked_minutes(entry) for entry in self.entries)
+
+    def overtime(
+        self,
+        daily_threshold_minutes: int = 8 * 60,
+        weekly_threshold_minutes: int = 40 * 60,
+    ) -> list[tuple[date, int, int]]:
+        """Per-day (date, regular, overtime), honoring daily and weekly thresholds.
+
+        See split_weekly_overtime for how the two thresholds interact.
+        """
+        daily = self.daily_worked_minutes()
+        splits = split_weekly_overtime(
+            [minutes for _, minutes in daily], daily_threshold_minutes, weekly_threshold_minutes
+        )
+        return [(day, regular, overtime) for (day, _), (regular, overtime) in zip(daily, splits)]
 
 
 def round_to_increment(minutes: float, increment: int = 15) -> int:
