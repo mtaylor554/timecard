@@ -74,13 +74,34 @@ Clock-in and clock-out must be timezone-aware `datetime` objects. A
 naive datetime raises `InvalidShiftError` rather than silently
 guessing what timezone you meant.
 
+### CSV import/export
+
+```python
+from timecard import dump_timesheet, load_timesheet
+
+with open("punches.csv", "w", newline="") as f:
+    dump_timesheet(sheet, f)
+
+with open("punches.csv") as f:
+    sheet = load_timesheet(f)
+```
+
+The format is one row per punch: `clock_in,clock_out,unpaid_break_minutes,note`.
+Timestamps are ISO 8601 with a UTC offset, so a round trip never loses
+or guesses a timezone. An open shift (no clock-out yet) round-trips as
+an empty `clock_out` field. A malformed row - unparsable timestamp,
+non-integer break minutes, or a missing `clock_in`/`clock_out` column -
+raises `CsvFormatError` naming the offending row. `write_entries` and
+`read_entries` work directly on a list of `TimeEntry` if you don't want
+a `Timesheet`.
+
 ## Status
 
 Early. The core duration math, rounding, daily/weekly overtime
-splits, and the `Timesheet` container that groups punches into days
-are in place. See `tests/test_core.py` for the table of edge cases
-this is meant to handle correctly, including shifts that cross a
-spring-forward and a fall-back DST transition.
+splits, the `Timesheet` container that groups punches into days, and
+CSV import/export are in place. See `tests/test_core.py` for the
+table of edge cases this is meant to handle correctly, including
+shifts that cross a spring-forward and a fall-back DST transition.
 
 ## Install
 
