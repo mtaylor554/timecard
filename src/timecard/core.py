@@ -105,6 +105,65 @@ class Timesheet:
         return [(day, regular, overtime) for (day, _), (regular, overtime) in zip(daily, splits)]
 
 
+@dataclass(frozen=True)
+class RoundingRule:
+    """A payroll punch-rounding rule: snap a punch to the nearest point on a
+    fixed grid, using a grace window to decide which side of a grid line a
+    punch that doesn't land on it exactly falls to.
+
+    increment_minutes is the spacing of the grid, e.g. 15 for quarter-hour
+    rounding. grace_minutes is how far past a grid line a punch can be and
+    still snap back to it; anything past the grace window snaps forward to
+    the next line instead. A grace of half the increment reproduces plain
+    round-to-nearest; a smaller grace favors the employer, a larger one
+    favors the employee.
+    """
+
+    increment_minutes: int = 15
+    grace_minutes: int = 7
+
+    def __post_init__(self):
+        if self.increment_minutes <= 0:
+            raise ValueError("increment_minutes must be positive")
+        if not (0 <= self.grace_minutes < self.increment_minutes):
+            raise ValueError("grace_minutes must be between 0 and increment_minutes - 1")
+
+    def round_datetime(self, moment: datetime) -> datetime:
+        """Round a punch to this rule's grid, in the punch's own wall-clock time.
+
+        We adjust the datetime with a timedelta rather than snapping the
+        hour/minute fields by hand, so rounding up near midnight rolls over
+        into the next day instead of producing an invalid time.
+        """
+        moment = moment.replace(second=0, microsecond=0)
+        minute_of_day = moment.hour * 60 + moment.minute
+        remainder = minute_of_day % self.increment_minutes
+        if remainder <= self.grace_minutes:
+            return moment - timedelta(minutes=remainder)
+        return moment + timedelta(minutes=self.increment_minutes - remainder)
+
+
+def rounded_worked_minutes(entry: TimeEntry, rule: RoundingRule) -> int:
+    """Worked minutes after rounding both punches to a RoundingRule's grid.
+
+    Rounding is applied to the punches themselves, before the unpaid break
+    is subtracted - that's how time clock hardware and most payroll systems
+    apply a rounding rule, rather than rounding the final duration.
+    """
+    if entry.clock_out is None:
+        raise OpenShiftError(f"shift starting {entry.clock_in.isoformat()} has no clock-out")
+    if entry.clock_in.tzinfo is None or entry.clock_out.tzinfo is None:
+        raise InvalidShiftError("clock_in and clock_out must be timezone-aware")
+
+    rounded = TimeEntry(
+        clock_in=rule.round_datetime(entry.clock_in),
+        clock_out=rule.round_datetime(entry.clock_out),
+        unpaid_break_minutes=entry.unpaid_break_minutes,
+        note=entry.note,
+    )
+    return worked_minutes(rounded)
+
+
 def round_to_increment(minutes: float, increment: int = 15) -> int:
     """Round to the nearest increment, rounding an exact tie up.
 

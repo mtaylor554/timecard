@@ -22,7 +22,7 @@ lets Python's own UTC-normalized subtraction do the hard part.
 ```python
 from datetime import datetime, timedelta, timezone
 
-from timecard import TimeEntry, Timesheet, worked_minutes, round_to_increment, split_overtime, split_weekly_overtime
+from timecard import TimeEntry, Timesheet, worked_minutes, round_to_increment, RoundingRule, rounded_worked_minutes, split_overtime, split_weekly_overtime
 
 est = timezone(timedelta(hours=-5))
 
@@ -74,6 +74,33 @@ Clock-in and clock-out must be timezone-aware `datetime` objects. A
 naive datetime raises `InvalidShiftError` rather than silently
 guessing what timezone you meant.
 
+### Grace-period rounding
+
+`round_to_increment` rounds a total duration. `RoundingRule` instead
+rounds the punches themselves, which is how time clocks and most
+payroll systems actually apply a rounding policy: a grid spacing plus
+a grace window that decides which side of a grid line a punch snaps
+to.
+
+```python
+# Quarter-hour grid, 7-minute grace: a punch up to 7 minutes past a
+# quarter-hour still counts as that quarter-hour; past that it counts
+# as the next one.
+rule = RoundingRule(increment_minutes=15, grace_minutes=7)
+
+clocked_in_early = TimeEntry(
+    clock_in=datetime(2026, 1, 5, 8, 53, tzinfo=est),   # snaps to 9:00
+    clock_out=datetime(2026, 1, 5, 17, 4, tzinfo=est),  # snaps to 17:00
+)
+rounded_worked_minutes(clocked_in_early, rule)  # 480
+```
+
+A grace equal to half the increment reproduces plain
+round-to-nearest; a smaller grace favors the employer, a larger one
+favors the employee. `rounded_worked_minutes` raises the same
+`OpenShiftError`/`InvalidShiftError` as `worked_minutes` and applies
+the unpaid break after rounding.
+
 ### CSV import/export
 
 ```python
@@ -97,11 +124,12 @@ a `Timesheet`.
 
 ## Status
 
-Early. The core duration math, rounding, daily/weekly overtime
-splits, the `Timesheet` container that groups punches into days, and
-CSV import/export are in place. See `tests/test_core.py` for the
-table of edge cases this is meant to handle correctly, including
-shifts that cross a spring-forward and a fall-back DST transition.
+Early. The core duration math, rounding (both plain and grace-period
+punch rounding), daily/weekly overtime splits, the `Timesheet`
+container that groups punches into days, and CSV import/export are
+in place. See `tests/test_core.py` for the table of edge cases this
+is meant to handle correctly, including shifts that cross a
+spring-forward and a fall-back DST transition.
 
 ## Install
 

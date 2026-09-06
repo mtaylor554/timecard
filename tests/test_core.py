@@ -4,9 +4,11 @@ from datetime import datetime, timedelta, timezone
 from timecard import (
     InvalidShiftError,
     OpenShiftError,
+    RoundingRule,
     TimeEntry,
     Timesheet,
     round_to_increment,
+    rounded_worked_minutes,
     split_overtime,
     split_weekly_overtime,
     worked_minutes,
@@ -239,6 +241,83 @@ class TimesheetTests(unittest.TestCase):
 
     def test_overtime_on_empty_sheet(self):
         self.assertEqual(Timesheet().overtime(), [])
+
+
+# Each case is (description, increment, grace, (hour, minute) in, (hour, minute) out).
+ROUND_DATETIME_CASES = [
+    ("inside the grace window rounds down", 15, 7, (9, 4), (9, 0)),
+    ("exactly at the grace boundary rounds down", 15, 7, (9, 22), (9, 15)),
+    ("just past the grace boundary rounds up", 15, 7, (9, 10), (9, 15)),
+    ("already on the grid stays put", 15, 7, (9, 15), (9, 15)),
+    ("rounding up crosses an hour", 15, 7, (9, 53), (10, 0)),
+    ("zero grace rounds up on any remainder", 15, 0, (9, 1), (9, 15)),
+    ("zero grace leaves an exact multiple alone", 15, 0, (9, 30), (9, 30)),
+]
+
+
+class RoundingRuleTests(unittest.TestCase):
+    def test_round_datetime_cases(self):
+        for description, increment, grace, (in_h, in_m), (out_h, out_m) in ROUND_DATETIME_CASES:
+            with self.subTest(description):
+                rule = RoundingRule(increment_minutes=increment, grace_minutes=grace)
+                moment = dt(EST, 2026, 1, 5, in_h, in_m, 40)
+                expected = dt(EST, 2026, 1, 5, out_h, out_m)
+                self.assertEqual(rule.round_datetime(moment), expected)
+
+    def test_round_datetime_rounding_up_crosses_midnight(self):
+        rule = RoundingRule(increment_minutes=15, grace_minutes=7)
+        moment = dt(EST, 2026, 1, 5, 23, 53)
+        self.assertEqual(rule.round_datetime(moment), dt(EST, 2026, 1, 6, 0, 0))
+
+    def test_rejects_non_positive_increment(self):
+        with self.assertRaises(ValueError):
+            RoundingRule(increment_minutes=0, grace_minutes=0)
+
+    def test_rejects_negative_grace(self):
+        with self.assertRaises(ValueError):
+            RoundingRule(increment_minutes=15, grace_minutes=-1)
+
+    def test_rejects_grace_at_or_above_increment(self):
+        with self.assertRaises(ValueError):
+            RoundingRule(increment_minutes=15, grace_minutes=15)
+
+
+class RoundedWorkedMinutesTests(unittest.TestCase):
+    def test_rounds_both_punches_toward_the_grid(self):
+        rule = RoundingRule(increment_minutes=15, grace_minutes=7)
+        entry = TimeEntry(clock_in=dt(EST, 2026, 1, 5, 8, 53), clock_out=dt(EST, 2026, 1, 5, 17, 4))
+        self.assertEqual(rounded_worked_minutes(entry, rule), 480)
+
+    def test_rounding_happens_before_the_break_is_subtracted(self):
+        rule = RoundingRule(increment_minutes=15, grace_minutes=7)
+        entry = TimeEntry(
+            clock_in=dt(EST, 2026, 1, 5, 8, 53),
+            clock_out=dt(EST, 2026, 1, 5, 17, 4),
+            unpaid_break_minutes=30,
+        )
+        self.assertEqual(rounded_worked_minutes(entry, rule), 450)
+
+    def test_open_shift_raises(self):
+        rule = RoundingRule()
+        entry = TimeEntry(clock_in=dt(EST, 2026, 1, 5, 9, 0), clock_out=None)
+        with self.assertRaises(OpenShiftError):
+            rounded_worked_minutes(entry, rule)
+
+    def test_naive_clock_out_raises(self):
+        rule = RoundingRule()
+        entry = TimeEntry(clock_in=dt(EST, 2026, 1, 5, 9, 0), clock_out=datetime(2026, 1, 5, 17, 0))
+        with self.assertRaises(InvalidShiftError):
+            rounded_worked_minutes(entry, rule)
+
+    def test_break_longer_than_rounded_shift_raises(self):
+        rule = RoundingRule(increment_minutes=15, grace_minutes=7)
+        entry = TimeEntry(
+            clock_in=dt(EST, 2026, 1, 5, 9, 4),
+            clock_out=dt(EST, 2026, 1, 5, 9, 6),
+            unpaid_break_minutes=5,
+        )
+        with self.assertRaises(InvalidShiftError):
+            rounded_worked_minutes(entry, rule)
 
 
 if __name__ == "__main__":
