@@ -104,6 +104,53 @@ class Timesheet:
         )
         return [(day, regular, overtime) for (day, _), (regular, overtime) in zip(daily, splits)]
 
+    def worked_minutes_with_breaks(self, policy: "BreakPolicy") -> int:
+        """Total worked minutes, plus paid time from short breaks between entries.
+
+        A break is the gap between one entry's clock_out and the next
+        entry's clock_in. Entries are sorted by clock_in first so the gaps
+        compared are between chronologically adjacent punches, not however
+        they happen to be ordered in the sheet - and a gap is judged only
+        on its length, so one that crosses midnight (or several days, for
+        someone coming back from time off) is handled the same as one that
+        doesn't.
+        """
+        ordered = sorted(self.entries, key=lambda entry: entry.clock_in)
+        total = sum(worked_minutes(entry) for entry in ordered)
+        for previous, current in zip(ordered, ordered[1:]):
+            gap = current.clock_in - previous.clock_out
+            gap_minutes = round(gap.total_seconds() / 60)
+            if gap_minutes < 0:
+                raise InvalidShiftError(
+                    f"entry starting {current.clock_in.isoformat()} overlaps the "
+                    f"previous entry, which ends {previous.clock_out.isoformat()}"
+                )
+            total += policy.paid_minutes(gap_minutes)
+        return total
+
+
+@dataclass(frozen=True)
+class BreakPolicy:
+    """Decide whether the gap between two consecutive punches is paid time.
+
+    Many jurisdictions require short breaks to stay on the clock: if a
+    worker clocks out and back in within paid_under_minutes, the gap is
+    paid rest time rather than an unpaid break, no matter whether it
+    crosses midnight. A gap of paid_under_minutes or longer is an
+    ordinary unpaid break - the same as it already is when a Timesheet's
+    entries simply don't touch.
+    """
+
+    paid_under_minutes: int = 20
+
+    def __post_init__(self):
+        if self.paid_under_minutes < 0:
+            raise ValueError("paid_under_minutes must not be negative")
+
+    def paid_minutes(self, gap_minutes: int) -> int:
+        """Minutes of a gap that count as paid, under this policy."""
+        return gap_minutes if gap_minutes < self.paid_under_minutes else 0
+
 
 @dataclass(frozen=True)
 class RoundingRule:

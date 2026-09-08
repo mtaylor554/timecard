@@ -1,4 +1,5 @@
 from .core import (
+    BreakPolicy,
     InvalidShiftError,
     OpenShiftError,
     RoundingRule,
@@ -19,6 +20,7 @@ from .csv_io import (
 )
 
 __all__ = [
+    "BreakPolicy",
     "CsvFormatError",
     "InvalidShiftError",
     "OpenShiftError",

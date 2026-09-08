@@ -101,6 +101,34 @@ favors the employee. `rounded_worked_minutes` raises the same
 `OpenShiftError`/`InvalidShiftError` as `worked_minutes` and applies
 the unpaid break after rounding.
 
+### Break policies
+
+`TimeEntry.unpaid_break_minutes` covers a break inside a single punch
+(a lunch taken without clocking out). `BreakPolicy` covers the other
+shape: a worker who actually clocks out and back in, where the gap
+between entries is a break. Whether that gap is paid depends on how
+short it is - many jurisdictions require a short break to stay on the
+clock - and the gap can cross midnight without changing the answer,
+since the policy only looks at its length.
+
+```python
+from timecard import BreakPolicy
+
+# Gaps under 20 minutes are paid; 20 minutes or longer is an unpaid break.
+policy = BreakPolicy(paid_under_minutes=20)
+
+sheet = Timesheet()
+sheet.add(TimeEntry(clock_in=datetime(2026, 1, 5, 9, 0, tzinfo=est), clock_out=datetime(2026, 1, 5, 12, 0, tzinfo=est)))
+sheet.add(TimeEntry(clock_in=datetime(2026, 1, 5, 12, 10, tzinfo=est), clock_out=datetime(2026, 1, 5, 17, 0, tzinfo=est)))
+
+sheet.worked_minutes_with_breaks(policy)  # 480 - the 10-minute gap is paid
+```
+
+Entries are sorted by `clock_in` before gaps are measured, so it
+doesn't matter what order they were added in. Overlapping entries
+raise `InvalidShiftError`, and an open shift anywhere in the sheet
+raises `OpenShiftError`, same as `total_worked_minutes`.
+
 ### CSV import/export
 
 ```python
@@ -126,10 +154,11 @@ a `Timesheet`.
 
 Early. The core duration math, rounding (both plain and grace-period
 punch rounding), daily/weekly overtime splits, the `Timesheet`
-container that groups punches into days, and CSV import/export are
-in place. See `tests/test_core.py` for the table of edge cases this
-is meant to handle correctly, including shifts that cross a
-spring-forward and a fall-back DST transition.
+container that groups punches into days, break policies for the gap
+between two punches, and CSV import/export are in place. See
+`tests/test_core.py` for the table of edge cases this is meant to
+handle correctly, including shifts that cross a spring-forward and a
+fall-back DST transition.
 
 ## Install
 

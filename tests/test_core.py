@@ -2,6 +2,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 
 from timecard import (
+    BreakPolicy,
     InvalidShiftError,
     OpenShiftError,
     RoundingRule,
@@ -318,6 +319,87 @@ class RoundedWorkedMinutesTests(unittest.TestCase):
         )
         with self.assertRaises(InvalidShiftError):
             rounded_worked_minutes(entry, rule)
+
+
+class BreakPolicyTests(unittest.TestCase):
+    def test_rejects_negative_paid_under_minutes(self):
+        with self.assertRaises(ValueError):
+            BreakPolicy(paid_under_minutes=-1)
+
+    def test_paid_minutes_under_threshold_counts_in_full(self):
+        policy = BreakPolicy(paid_under_minutes=20)
+        self.assertEqual(policy.paid_minutes(10), 10)
+
+    def test_paid_minutes_at_or_over_threshold_is_zero(self):
+        policy = BreakPolicy(paid_under_minutes=20)
+        self.assertEqual(policy.paid_minutes(20), 0)
+        self.assertEqual(policy.paid_minutes(30), 0)
+
+
+class WorkedMinutesWithBreaksTests(unittest.TestCase):
+    def test_short_break_between_entries_is_paid(self):
+        sheet = Timesheet(
+            entries=[
+                TimeEntry(clock_in=dt(EST, 2026, 1, 5, 9, 0), clock_out=dt(EST, 2026, 1, 5, 12, 0)),
+                # 10-minute break, under the 20-minute threshold.
+                TimeEntry(clock_in=dt(EST, 2026, 1, 5, 12, 10), clock_out=dt(EST, 2026, 1, 5, 17, 0)),
+            ]
+        )
+        policy = BreakPolicy(paid_under_minutes=20)
+        self.assertEqual(sheet.worked_minutes_with_breaks(policy), 480)
+
+    def test_long_break_between_entries_stays_unpaid(self):
+        sheet = Timesheet(
+            entries=[
+                TimeEntry(clock_in=dt(EST, 2026, 1, 5, 9, 0), clock_out=dt(EST, 2026, 1, 5, 12, 0)),
+                # 30-minute break, at or over the threshold.
+                TimeEntry(clock_in=dt(EST, 2026, 1, 5, 12, 30), clock_out=dt(EST, 2026, 1, 5, 17, 0)),
+            ]
+        )
+        policy = BreakPolicy(paid_under_minutes=20)
+        self.assertEqual(sheet.worked_minutes_with_breaks(policy), 180 + 270)
+
+    def test_break_spanning_midnight_judged_only_on_length(self):
+        sheet = Timesheet(
+            entries=[
+                TimeEntry(clock_in=dt(EST, 2026, 1, 5, 23, 0), clock_out=dt(EST, 2026, 1, 5, 23, 50)),
+                # 15-minute break that crosses into the next calendar day.
+                TimeEntry(clock_in=dt(EST, 2026, 1, 6, 0, 5), clock_out=dt(EST, 2026, 1, 6, 8, 0)),
+            ]
+        )
+        policy = BreakPolicy(paid_under_minutes=20)
+        self.assertEqual(sheet.worked_minutes_with_breaks(policy), 50 + 475 + 15)
+
+    def test_entries_out_of_order_are_sorted_before_gaps_are_computed(self):
+        sheet = Timesheet(
+            entries=[
+                TimeEntry(clock_in=dt(EST, 2026, 1, 5, 12, 10), clock_out=dt(EST, 2026, 1, 5, 17, 0)),
+                TimeEntry(clock_in=dt(EST, 2026, 1, 5, 9, 0), clock_out=dt(EST, 2026, 1, 5, 12, 0)),
+            ]
+        )
+        policy = BreakPolicy(paid_under_minutes=20)
+        self.assertEqual(sheet.worked_minutes_with_breaks(policy), 480)
+
+    def test_overlapping_entries_raise(self):
+        sheet = Timesheet(
+            entries=[
+                TimeEntry(clock_in=dt(EST, 2026, 1, 5, 9, 0), clock_out=dt(EST, 2026, 1, 5, 13, 0)),
+                TimeEntry(clock_in=dt(EST, 2026, 1, 5, 12, 0), clock_out=dt(EST, 2026, 1, 5, 17, 0)),
+            ]
+        )
+        with self.assertRaises(InvalidShiftError):
+            sheet.worked_minutes_with_breaks(BreakPolicy())
+
+    def test_open_shift_propagates(self):
+        sheet = Timesheet(entries=[TimeEntry(clock_in=dt(EST, 2026, 1, 5, 9, 0), clock_out=None)])
+        with self.assertRaises(OpenShiftError):
+            sheet.worked_minutes_with_breaks(BreakPolicy())
+
+    def test_single_entry_sheet_has_no_gaps(self):
+        sheet = Timesheet(
+            entries=[TimeEntry(clock_in=dt(EST, 2026, 1, 5, 9, 0), clock_out=dt(EST, 2026, 1, 5, 17, 0))]
+        )
+        self.assertEqual(sheet.worked_minutes_with_breaks(BreakPolicy()), 480)
 
 
 if __name__ == "__main__":
