@@ -177,3 +177,7 @@ python -m unittest discover -s tests
 ## License
 
 MIT, see `LICENSE`.
+
+## Changelog
+
+See `CHANGELOG.md`.
