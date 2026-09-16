@@ -62,6 +62,11 @@ WORKED_MINUTES_CASES = [
         InvalidShiftError,
     ),
     (
+        "negative unpaid_break_minutes raises",
+        dict(clock_in=dt(EST, 2026, 1, 5, 9, 0), clock_out=dt(EST, 2026, 1, 5, 17, 0), unpaid_break_minutes=-5),
+        InvalidShiftError,
+    ),
+    (
         "clock_out before clock_in raises",
         dict(clock_in=dt(EST, 2026, 1, 5, 17, 0), clock_out=dt(EST, 2026, 1, 5, 9, 0)),
         InvalidShiftError,
@@ -316,6 +321,16 @@ class RoundedWorkedMinutesTests(unittest.TestCase):
             clock_in=dt(EST, 2026, 1, 5, 9, 4),
             clock_out=dt(EST, 2026, 1, 5, 9, 6),
             unpaid_break_minutes=5,
+        )
+        with self.assertRaises(InvalidShiftError):
+            rounded_worked_minutes(entry, rule)
+
+    def test_negative_unpaid_break_minutes_raises(self):
+        rule = RoundingRule()
+        entry = TimeEntry(
+            clock_in=dt(EST, 2026, 1, 5, 9, 0),
+            clock_out=dt(EST, 2026, 1, 5, 17, 0),
+            unpaid_break_minutes=-5,
         )
         with self.assertRaises(InvalidShiftError):
             rounded_worked_minutes(entry, rule)

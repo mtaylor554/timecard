@@ -40,6 +40,11 @@ def worked_minutes(entry: TimeEntry) -> int:
     if entry.clock_in.tzinfo is None or entry.clock_out.tzinfo is None:
         raise InvalidShiftError("clock_in and clock_out must be timezone-aware")
 
+    if entry.unpaid_break_minutes < 0:
+        raise InvalidShiftError(
+            f"unpaid_break_minutes ({entry.unpaid_break_minutes}) must not be negative"
+        )
+
     span = entry.clock_out - entry.clock_in
     if span < timedelta(0):
         raise InvalidShiftError(

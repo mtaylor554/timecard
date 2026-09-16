@@ -10,7 +10,7 @@ uploaded to PyPI yet.
   relies on timezone-aware `datetime` subtraction instead of calendar
   math. Raises `OpenShiftError` for a missing clock-out and
   `InvalidShiftError` for bad punches (naive datetimes, clock-out before
-  clock-in, a break longer than the shift).
+  clock-in, a break longer than the shift, a negative break).
 - `round_to_increment`: round a duration to a fixed increment, ties up
   rather than Python's banker's rounding.
 - `RoundingRule` / `rounded_worked_minutes`: grace-period punch rounding,
