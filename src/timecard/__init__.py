@@ -1,3 +1,11 @@
+from importlib.metadata import PackageNotFoundError, version as _version
+
+try:
+    __version__ = _version("timecard")
+except PackageNotFoundError:
+    # Source checkout that was never `pip install`-ed, editable or otherwise.
+    __version__ = "0.0.0+unknown"
+
 from .core import (
     BreakPolicy,
     InvalidShiftError,
